@@ -2,19 +2,22 @@
 API routes - Clean HTTP handling only
 Business logic is delegated to services
 """
-import time
 from fastapi import APIRouter, HTTPException, status
+from typing import List, Dict, Optional
 from app.models import UserProfile
 from app.response_models import (
     APIResponse,
     HealthCheckData,
-    CalorieCalculationData
+    CalorieCalculationData,
+    LLMTestData,
+    ChatData,
+    ChatRequest
 )
 from app.services.calculator import calculator
-from app.services.rag_service import rag_service
 from app.services.llm_service import llm_service
-from app.response_models import LLMTestData, ChatData, ChatRequest
-from typing import List, Dict, Optional 
+from app.services.rag_service import rag_service
+import time
+
 # Track server start time
 START_TIME = time.time()
 
@@ -23,11 +26,7 @@ router = APIRouter(prefix="/api/v1", tags=["fitness"])
 
 @router.get("/health", response_model=APIResponse)
 def health_check():
-    """
-    Health check endpoint
-    
-    Returns server status and uptime
-    """
+    """Health check endpoint"""
     uptime = time.time() - START_TIME
     
     health_data = HealthCheckData(
@@ -37,7 +36,8 @@ def health_check():
         checks={
             "api": True,
             "calculator": True,
-            "config": True
+            "llm": True,
+            "rag": rag_service.is_initialized
         }
     )
     
@@ -49,18 +49,8 @@ def health_check():
 
 @router.post("/calculate-calories", response_model=APIResponse)
 def calculate_calories(profile: UserProfile):
-    """
-    Calculate complete nutritional breakdown
-    
-    This endpoint:
-    1. Validates user profile (automatic via Pydantic)
-    2. Delegates calculation to calculator service
-    3. Returns standardized response
-    
-    The route is clean - all business logic is in the service!
-    """
+    """Calculate complete nutritional breakdown"""
     try:
-        # Delegate to service - this is the key pattern!
         breakdown = calculator.calculate_full_breakdown(
             weight_kg=profile.weight,
             height_cm=profile.height,
@@ -70,7 +60,6 @@ def calculate_calories(profile: UserProfile):
             goal=profile.goal
         )
         
-        # Wrap in response model
         calc_data = CalorieCalculationData(**breakdown)
         
         return APIResponse(
@@ -90,20 +79,9 @@ def calculate_calories(profile: UserProfile):
             }
         )
 
-
-
 @router.get("/llm/test", response_model=APIResponse)
 def test_llm_connection():
-    """
-    Test OpenAI API connection
-    
-    This endpoint verifies that:
-    1. API key is configured
-    2. API is reachable
-    3. Model is responding
-    
-    Use this to debug LLM issues
-    """
+    """Test OpenAI API connection"""
     try:
         test_result = llm_service.test_connection()
         
@@ -133,17 +111,7 @@ def test_llm_connection():
 
 @router.post("/chat", response_model=APIResponse)
 def fitness_chat(request: ChatRequest):
-    """
-    Chat with FitCoach AI assistant
-    
-    This is a simple chat endpoint for testing LLM functionality.
-    It uses a fitness expert persona to answer questions.
-    
-    Example questions:
-    - "What's a good beginner workout?"
-    - "How much protein should I eat?"
-    - "What are compound exercises?"
-    """
+    """Chat with FitCoach AI assistant"""
     try:
         chat_result = llm_service.fitness_chat(request.message)
         chat_data = ChatData(**chat_result)
@@ -164,81 +132,6 @@ def fitness_chat(request: ChatRequest):
                 "details": {"error": str(e)}
             }
         )
-
-@router.get("/llm/test", response_model=APIResponse)
-def test_llm_connection():
-    """
-    Test OpenAI API connection
-    
-    This endpoint verifies that:
-    1. API key is configured
-    2. API is reachable
-    3. Model is responding
-    
-    Use this to debug LLM issues
-    """
-    try:
-        test_result = llm_service.test_connection()
-        
-        if test_result["status"] == "connected":
-            return APIResponse(
-                success=True,
-                message="OpenAI API connection successful",
-                data=test_result
-            )
-        else:
-            return APIResponse(
-                success=False,
-                message="OpenAI API connection failed",
-                data=test_result
-            )
-    
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "success": False,
-                "message": "Error testing LLM connection",
-                "error_code": "LLM_TEST_ERROR",
-                "details": {"error": str(e)}
-            }
-        )
-
-@router.post("/chat", response_model=APIResponse)
-def fitness_chat(request: ChatRequest):
-    """
-    Chat with FitCoach AI assistant
-    
-    This is a simple chat endpoint for testing LLM functionality.
-    It uses a fitness expert persona to answer questions.
-    
-    Example questions:
-    - "What's a good beginner workout?"
-    - "How much protein should I eat?"
-    - "What are compound exercises?"
-    """
-    try:
-        chat_result = llm_service.fitness_chat(request.message)
-        chat_data = ChatData(**chat_result)
-        
-        return APIResponse(
-            success=True,
-            message="Response generated successfully",
-            data=chat_data.dict()
-        )
-    
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "success": False,
-                "message": "Error generating response",
-                "error_code": "CHAT_ERROR",
-                "details": {"error": str(e)}
-            }
-        )
-
-
 
 @router.get("/exercises/search", response_model=APIResponse)
 def search_exercises(
@@ -261,8 +154,10 @@ def search_exercises(
     Returns:
         List of relevant exercises
     
-    Example:
-        /api/v1/exercises/search?query=chest%20exercises&level=beginner&limit=5
+    Examples:
+        - /api/v1/exercises/search?query=chest%20exercises&limit=5
+        - /api/v1/exercises/search?query=beginner%20workout&level=beginner
+        - /api/v1/exercises/search?query=legs&body_part=Legs&limit=10
     """
     if not rag_service.is_initialized:
         try:
@@ -279,20 +174,32 @@ def search_exercises(
             )
     
     try:
-        # Build filters
-        filters = {}
+        # Build ChromaDB-compatible filter
+        # ChromaDB requires $and operator for multiple conditions
+        filter_conditions = []
+        
         if level:
-            filters['level'] = level.capitalize()
+            filter_conditions.append({"level": level.capitalize()})
         if body_part:
-            filters['body_part'] = body_part.capitalize()
+            filter_conditions.append({"body_part": body_part.capitalize()})
         if equipment:
-            filters['equipment'] = equipment.capitalize()
+            filter_conditions.append({"equipment": equipment.capitalize()})
+        
+        # Construct proper filter format
+        chroma_filter = None
+        if filter_conditions:
+            if len(filter_conditions) == 1:
+                # Single condition - use directly
+                chroma_filter = filter_conditions[0]
+            else:
+                # Multiple conditions - use $and operator
+                chroma_filter = {"$and": filter_conditions}
         
         # Search exercises
         results = rag_service.search_exercises(
             query=query,
             k=min(limit, 20),
-            filters=filters if filters else None
+            filters=chroma_filter
         )
         
         # Format results
@@ -313,6 +220,11 @@ def search_exercises(
             message=f"Found {len(exercises)} exercises",
             data={
                 "query": query,
+                "filters": {
+                    "level": level,
+                    "body_part": body_part,
+                    "equipment": equipment
+                },
                 "count": len(exercises),
                 "exercises": exercises
             }
