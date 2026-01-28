@@ -1,63 +1,71 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-import uvicorn
-
-from backend.app.core.config import settings
-from backend.app.api.routes import router
-from backend.app.services.rag_service import rag_service
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Startup and shutdown events"""
-    # Startup
-    print("Starting Fitness Coach Bot API...")
-    try:
-        rag_service.load_vectorstore()
-        print("✓ RAG service initialized")
-    except Exception as e:
-        print(f"⚠ Warning: Could not load vectorstore: {e}")
-        print("  Run build_database.py first to create the vectorstore")
-    
-    yield
-    
-    # Shutdown
-    print("Shutting down API...")
+"""
+FastAPI application with standardized responses
+"""
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from app.config import settings
+from app.routes import router
+from app.response_models import ErrorResponse
+from datetime import datetime
 
 # Create FastAPI app
 app = FastAPI(
-    title=settings.PROJECT_NAME,
-    description=settings.DESCRIPTION,
-    version=settings.VERSION,
-    lifespan=lifespan
+    title="Fitness Coach Bot API",
+    description="AI-powered fitness coaching with standardized responses",
+    version="1.0.0"
 )
 
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Global exception handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle validation errors with standard format"""
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "success": False,
+            "message": "Validation error",
+            "error_code": "VALIDATION_ERROR",
+            "details": exc.errors(),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    )
 
-# Include routers
-app.include_router(router, prefix=settings.API_V1_STR, tags=["fitness"])
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle all other exceptions with standard format"""
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "success": False,
+            "message": "Internal server error",
+            "error_code": "INTERNAL_ERROR",
+            "details": {"error": str(exc)},
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    )
+
+# Include router
+app.include_router(router)
 
 @app.get("/")
-async def root():
-    """Root endpoint"""
+def root():
+    """Root endpoint with standard response"""
     return {
+        "success": True,
         "message": "Fitness Coach Bot API",
-        "version": settings.VERSION,
-        "docs": "/docs",
-        "health": f"{settings.API_V1_STR}/health"
+        "data": {
+            "version": "1.0.0",
+            "docs": "/docs",
+            "health": "/api/v1/health",
+            "endpoints": [
+                "/api/v1/health",
+                "/api/v1/calculate-calories"
+            ]
+        },
+        "timestamp": datetime.utcnow().isoformat()
     }
 
 if __name__ == "__main__":
-    uvicorn.run(
-        "backend.app.main:app",
-        host=settings.BACKEND_HOST,
-        port=settings.BACKEND_PORT,
-        reload=True
-    )
+    import uvicorn
+    uvicorn.run(app, host=settings.BACKEND_HOST, port=settings.BACKEND_PORT)
