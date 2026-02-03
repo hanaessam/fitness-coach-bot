@@ -12,6 +12,7 @@ from app.config import settings
 from app.routes import router
 from app.response_models import ErrorResponse
 from app.services.rag_service import rag_service
+from app.services.gym_analytics import load_gym_analytics
 
 
 @asynccontextmanager
@@ -21,14 +22,17 @@ async def lifespan(app: FastAPI):
     print("Starting Fitness Coach Bot API")
     print("=" * 60)
 
-    # Try to load RAG system
+    # Load RAG system
     try:
         rag_service.load_vectorstore()
         print("✓ RAG system initialized")
     except Exception as e:
         print(f"⚠ Warning: Could not load RAG system: {e}")
-        print("  Exercise search will not work until database is built")
-        print("  Run: python build_database.py")
+
+    if load_gym_analytics():
+        print("✓ Gym analytics loaded")
+    else:
+        print("⚠ Warning: Gym analytics not available")
 
     print("=" * 60 + "\n")
 
