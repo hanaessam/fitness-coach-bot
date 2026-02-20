@@ -16,13 +16,15 @@ def get_collection(collection_name):
     )
 
 
-def query_exercises(query, k=3):
+def query_exercises(query, k=5):
+    # Returns top-k exercise page_content strings from ChromaDB
     store = get_collection("exercises")
     results = store.similarity_search(query, k=k)
     return [doc.page_content for doc in results]
 
 
-def query_nutrients(query, k=3):
+def query_nutrients(query, k=5):
+    # Returns top-k nutrient page_content strings from ChromaDB
     store = get_collection("nutrients")
     results = store.similarity_search(query, k=k)
     return [doc.page_content for doc in results]
