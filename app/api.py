@@ -3,6 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
 from enum import Enum
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from app.prompts.system_prompt import SYSTEM_PROMPT
 
 from app.utils.calorie_calc import calculate_calorie_target
 from app.rag.chain import generate_plan
@@ -135,3 +138,56 @@ def create_plan(request: PlanRequest):
         ),
         warning=calorie_result["warning"],
     )
+
+# --- Chat models ---
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    message: str
+    plan_context: str = ""
+    chat_history: list[ChatMessage] = Field(default_factory=list)
+
+
+class ChatResponse(BaseModel):
+    reply: str
+
+
+# --- Chat endpoint ---
+
+@app.post("/chat", response_model=ChatResponse)
+def chat_with_fitbot(request: ChatRequest):
+    try:
+        # Build conversation messages
+        messages = [("system", SYSTEM_PROMPT)]
+
+        # Add plan context as an initial assistant message
+        if request.plan_context:
+            messages.append((
+                "assistant",
+                f"Here is the plan I previously generated for you:\n\n{request.plan_context}"
+            ))
+
+        # Add chat history
+        for msg in request.chat_history:
+            if msg.role in ("user", "assistant"):
+                messages.append((msg.role, msg.content))
+
+        # Add current user message
+        messages.append(("human", request.message))
+
+        prompt = ChatPromptTemplate.from_messages(messages)
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3, max_tokens=1000)
+        chain = prompt | llm
+
+        response = chain.invoke({})
+        return ChatResponse(reply=response.content)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Chat error: {str(e)}",
+        )
