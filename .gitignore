@@ -148,7 +148,6 @@ activemq-data/
 *.sage.py
 
 # Environments
-.env
 .envrc
 .venv
 env/
@@ -219,3 +218,5 @@ __marimo__/
 .DS_Store
 
 chroma_db/
+config.bat
+node_modules

@@ -144,9 +144,3 @@ FitBot enforces the following safety rules:
 - Always recommends consulting a healthcare professional
 - Provides eating disorder helpline information when appropriate
 
-## Authors
-
-- Hana Essam
-- Mariam Mousa
-
-CSAI 810 — Generative AI, Queen's University, 2026
