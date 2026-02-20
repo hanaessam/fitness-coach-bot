@@ -8,7 +8,7 @@ app_port: 7860
 pinned: false
 ---
 
-# FitBot - Your Personal Fitness Coach
+# FitBot - Your Personal Fitness Coach Bot
 
 A RAG-based fitness and nutrition chatbot that generates personalized workout
 and meal plans based on your body metrics, goals, and dietary preferences.
@@ -21,6 +21,69 @@ and meal plans based on your body metrics, goals, and dietary preferences.
 - Interactive chat to ask follow-up questions about your plan
 - Six fitness goals: lose, aggressive lose, maintain, recomp, lean bulk, bulk
 
+## Live Demo
+
+Visit the deployed app: [FitBot on Hugging Face Spaces](https://huggingface.co/spaces/hanaessam/fitness-coach-bot)
+
+## Run Locally
+
+### Prerequisites
+
+- Python 3.10+
+- An OpenAI API key
+
+### Setup
+
+1. Clone the repository:
+
+```bash
+git clone https://github.com/hanaessam/fitness-coach-bot.git
+cd fitness-coach-bot
+```
+
+2. Create and activate a virtual environment:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+3. Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+4. Create a `.env` file in the project root:
+
+```
+OPENAI_API_KEY=your_key_here
+```
+
+5. Download the datasets and place them in the `data/` folder:
+   - [Gym Exercise Data](https://www.kaggle.com/datasets/niharika41298/gym-exercise-data) save as `data/megaGymDataset.csv`
+   - [Nutritional Values for Common Foods](https://www.kaggle.com/datasets/trolukovich/nutritional-values-for-common-foods-and-products) save as `data/nutrition.csv`
+
+6. Run data ingestion to populate ChromaDB:
+
+```bash
+python -m app.rag.ingest
+```
+
+7. Start the FastAPI backend:
+
+```bash
+uvicorn app.api:app --reload
+```
+
+8. In a separate terminal, start the Streamlit frontend:
+
+```bash
+streamlit run app/main.py
+```
+
+9. Open your browser to http://localhost:8501
+
 ## How to Use
 
 1. Enter your body metrics in the sidebar (weight, height, age, sex)
@@ -30,23 +93,8 @@ and meal plans based on your body metrics, goals, and dietary preferences.
 5. Use the chat to ask follow-up questions or request modifications
 
 ## Architecture
-```
-User (Browser)
-     |
-     v
-Streamlit UI (port 7860)
-     |
-     v
-FastAPI Backend (port 8000)
-     |
-     +---> Calorie Calculator (Mifflin-St Jeor + safety checks)
-     |
-     +---> RAG Chain (LangChain LCEL)
-              |
-              +---> ChromaDB (exercises collection)
-              +---> ChromaDB (nutrients collection)
-              +---> OpenAI GPT-4o-mini
-```
+
+![FitBot Architecture](architecture.png)
 
 ## Tech Stack
 
@@ -58,16 +106,47 @@ FastAPI Backend (port 8000)
 - **Orchestration**: LangChain (LCEL)
 - **Deployment**: Hugging Face Spaces (Docker)
 
+## Project Structure
+
+```
+fitness-coach-bot/
+├── app/
+│   ├── main.py              # Streamlit frontend
+│   ├── api.py               # FastAPI backend
+│   ├── rag/
+│   │   ├── ingest.py        # Data ingestion pipeline
+│   │   ├── retriever.py     # ChromaDB query functions
+│   │   └── chain.py         # LangChain RAG chain
+│   ├── prompts/
+│   │   └── system_prompt.py # FitBot system prompt
+│   └── utils/
+│       └── calorie_calc.py  # BMR/TDEE/safety calculations
+├── data/                    # CSV datasets
+├── chroma_db/               # Vector store (generated)
+├── Dockerfile
+├── start.sh
+├── requirements.txt
+└── README.md
+```
+
 ## Datasets
 
-- [Gym Exercise Data](https://www.kaggle.com/datasets/niharika41298/gym-exercise-data) by Niharika
-- [Nutritional Values for Common Foods](https://www.kaggle.com/datasets/trolukovich/nutritional-values-for-common-foods-and-products) by Trolukovich
+- [Gym Exercise Data](https://www.kaggle.com/datasets/niharika41298/gym-exercise-data) by Niharika — 1,368 exercises after cleaning
+- [Nutritional Values for Common Foods](https://www.kaggle.com/datasets/trolukovich/nutritional-values-for-common-foods-and-products) by Trolukovich — 8,789 food items
 
 ## Safety
 
 FitBot enforces the following safety rules:
+
 - Minimum 1200 kcal/day floor
 - Blocks aggressive deficits for normal/underweight BMI users
 - Refuses to diagnose injuries or medical conditions
 - Always recommends consulting a healthcare professional
 - Provides eating disorder helpline information when appropriate
+
+## Authors
+
+- Hana Essam
+- Mariam Mousa
+
+CSAI 810 — Generative AI, Queen's University, 2026
